@@ -1,60 +1,136 @@
-import streamlit as st
-import numpy as np
+from apiclient.discovery import build
+import json
 import pandas as pd
-from PIL import Image
-import time
-# 起動方法 streamlit run main.py
-# 終了方法 Ctrl+C
-# リファレンス https://docs.streamlit.io/library/api-reference
-# https://github.com/sammyTI/youtube-streamlit.git
-st.title('Streamlit')
+import streamlit as st
 
-st.title('プログレスバーの表示')
-'Start!!'
+with open('secret.json') as f:
+    secret = json.load(f)
 
-latest_iteration = st.empty()
-bar = st.progress(0)
+DEVELOPER_KEY = secret['KEY']
+YOUTUBE_API_SERVICE_NAME = "youtube"
+YOUTUBE_API_VERSION = "v3"
 
-for i in range(100):
-    latest_iteration.text(f'Iteration {i+1}')
-    bar.progress(i+1)
-    if i > 70:
-        time.sleep(0.05)
-    else:
-        time.sleep(0.1)
-'Done!!!'
+youtube = build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION,
+                developerKey=DEVELOPER_KEY)
 
-l_column, r_column = st.columns(2)
-buttonr = r_column.button('右カラムに文字を表示')
-buttonl = l_column.button('左カラムに文字を表示')
+def video_search(youtube, q='自動化', max_results=50):
+    # q = 'Python'
+    # max_results = 50
+    response = youtube.search().list(
+        q=q,
+        # idは不要なので削除
+        part="snippet",
+        #視聴回数が多い順に取得
+        order='viewCount',
+        # ビデオ形式のみ取得    
+        type='video',
+        maxResults=max_results,
+    #     # 必要なデータを絞り込み    
+    #     fields='items(id(videoId), snippet(channelId, title, description, channelTitle))'
+    ).execute()
 
-if buttonr:
-    r_column.write('ここは右カラム')
-if buttonl:
-    l_column.write('ここは左カラム')
+    items_id = []
+    items = response['items']
+    for item in items:
+        item_id = {}
+        item_id['video_id'] = item['id']['videoId']
+        item_id['channel_id'] = item['snippet']['channelId']
+        items_id.append(item_id)
+    df_video = pd.DataFrame(items_id)
+    return df_video
 
-expander1 = st.expander('質問１')
-expander1.write('回答内容を書く')
+def get_results(df_video, threshold=50000):
+#     df_video = video_search(youtube, q='Python 自動化', max_results=30)
+    channel_ids = df_video['channel_id'].unique().tolist()
 
-expander2 = st.expander('質問２')
-expander2.write('回答内容を書く')
 
-expander3 = st.expander('質問３')
-expander3.write('回答内容を書く')
+    subscriber_list = youtube.channels().list(
+        id=','.join(channel_ids),
+        part='statistics',
+        # 必要なデータを絞り込み
+        fields='items(id,statistics(subscriberCount))'
+    ).execute()
 
-# img = Image.open('pengin.jpg')
+    subscribers = []
+    for item in subscriber_list['items']:
+        subscriber = {}
+        if len(item['statistics']) > 0:
+            subscriber['channel_id'] = item['id']
+            subscriber['subscriber_count'] = int(item['statistics']['subscriberCount'])
+        else:
+            subscriber['channel_id'] = item['id']
+        subscribers.append(subscriber)
 
-# if st.checkbox('Show Image'):
-#     st.image(img, caption='ペンギン', use_column_width=True)
+    df_subscribers = pd.DataFrame(subscribers)
 
-# option = st.selectbox(
-#     '好きな数字を教えてください',
-#     list(range(1,11))
-# )
-# 'あなたの好きな数字は、',option,'です。'
+    df = pd.merge(left=df_video, right=df_subscribers, on='channel_id')
+    df_extracted = df[df['subscriber_count'] < threshold]
 
-# text = st.text_input('あなたの趣味を教えてください。')
-# 'あなたの趣味：',text,'です。'
+    video_ids = df_extracted['video_id'].tolist()
+    videos_list = youtube.videos().list(
+                id=','.join(video_ids),
+                part='snippet,contentDetails,statistics',
+                fields='items(id,snippet(title,publishedAt),contentDetails(duration),statistics(viewCount))'
+            ).execute()
 
-# condition = st.slider('今日の調子は？',0,100,50)
-# 'コンディション：',condition,
+    videos_info = []
+
+    items = videos_list['items']
+    for item in items:
+        video_info = {}
+        video_info['video_id'] = item['id']
+        video_info['title'] = item['snippet']['title']
+        video_info['view_count'] = item['statistics']['viewCount']
+        videos_info.append(video_info)
+
+    df_videos_info = pd.DataFrame(videos_info)
+
+    try:
+        results = pd.merge(left=df_extracted, right=df_videos_info, on='video_id')
+        #     カラム並び替え
+        results = results.loc[:, ['video_id', 'title', 'view_count', 'subscriber_count', 'channel_id']]
+    except:
+        results = pd.DataFrame()
+
+    return results
+
+st.title('分析アプリ')
+
+st.sidebar.write('## クエリと閾値の設定')
+st.sidebar.write('### クエリの入力')
+query = st.sidebar.text_input('検索クエリを入力してください','Python 自動化')
+
+st.sidebar.write('### 閾値の設定')
+threshold = st.sidebar.slider('登録者数の閾値',100, 10000, 5000)
+
+st.sidebar.write('### 表示数の設定')
+max_results = st.sidebar.slider('表示数',1, 100, 50)
+
+st.write('### 選択中のパラメーター')
+st.markdown(f"""
+- 検索クエリ：{query}
+- 登録者数の閾値：{threshold}       
+- 表示数：{max_results}     
+""")
+
+df_video = video_search(youtube, q=query, max_results=max_results)
+results = get_results(df_video, threshold=threshold)
+
+st.write('### 分析結果', results)
+st.write('### 動画再生')
+
+video_id = st.text_input('動画IDを入力してください')
+url = f"https://youtu.be/{video_id}"
+video_field = st.empty()
+video_field.write('こちらに動画が表示されます')
+
+if st.button('ビデオ表示'):
+    if len(video_id) > 0:
+        try:
+            video_field.video(url)
+        except:
+            st.error(
+                """
+                **おっと！何かエラーが起きているようです。** :(
+            """
+            )
