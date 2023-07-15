@@ -1,7 +1,12 @@
 from apiclient.discovery import build
 import json
-import pandas as pd
+from collections import Counter
 import streamlit as st
+import MeCab as mc
+from collections import Counter
+
+st.set_page_config(layout="wide")
+
 
 with open('secret.json') as f:
     secret = json.load(f)
@@ -10,127 +15,129 @@ DEVELOPER_KEY = secret['KEY']
 YOUTUBE_API_SERVICE_NAME = "youtube"
 YOUTUBE_API_VERSION = "v3"
 
-youtube = build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION,
-                developerKey=DEVELOPER_KEY)
+youtube = build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION, developerKey=DEVELOPER_KEY)
 
-def video_search(youtube, q='自動化', max_results=50):
-    # q = 'Python'
-    # max_results = 50
-    response = youtube.search().list(
-        q=q,
-        # idは不要なので削除
-        part="snippet",
-        #視聴回数が多い順に取得
-        order='viewCount',
-        # ビデオ形式のみ取得    
+
+def search_videos_by_keyword(keyword, max_results):
+    search_response = youtube.search().list(
+        q=keyword,
         type='video',
+        part='id,snippet',  # 'statistics'を削除
         maxResults=max_results,
-    #     # 必要なデータを絞り込み    
-    #     fields='items(id(videoId), snippet(channelId, title, description, channelTitle))'
+        order='viewCount',
+        videoDuration='medium',  # Short動画をフィルタするため4分以上の動画に絞る
+        publishedAfter='2023-01-01T00:00:00Z',  # 検索期間
+        publishedBefore='2023-07-01T23:59:59Z'  # 検索期間
     ).execute()
 
-    items_id = []
-    items = response['items']
-    for item in items:
-        item_id = {}
-        item_id['video_id'] = item['id']['videoId']
-        item_id['channel_id'] = item['snippet']['channelId']
-        items_id.append(item_id)
-    df_video = pd.DataFrame(items_id)
-    return df_video
+    video_info = []
+    for search_result in search_response.get('items', []):
+        if search_result['id']['kind'] == 'youtube#video':
+            video_id = search_result['id']['videoId']
+            video_stats = get_video_stats(video_id)
+            if video_stats:
+                video_info.append({
+                    'title': search_result['snippet']['title'],
+                    'thumbnail': search_result['snippet']['thumbnails']['high']['url'],
+                    'viewCount': int(video_stats['viewCount']),
+                    'subscriberCount': int(get_subscriber_count(search_result['snippet']['channelId']))
+                })
 
-def get_results(df_video, threshold=50000):
-#     df_video = video_search(youtube, q='Python 自動化', max_results=30)
-    channel_ids = df_video['channel_id'].unique().tolist()
+    return video_info
 
 
-    subscriber_list = youtube.channels().list(
-        id=','.join(channel_ids),
+def get_video_stats(video_id):
+    stats_response = youtube.videos().list(
         part='statistics',
-        # 必要なデータを絞り込み
-        fields='items(id,statistics(subscriberCount))'
+        id=video_id
     ).execute()
 
-    subscribers = []
-    for item in subscriber_list['items']:
-        subscriber = {}
-        if len(item['statistics']) > 0:
-            subscriber['channel_id'] = item['id']
-            subscriber['subscriber_count'] = int(item['statistics']['subscriberCount'])
-        else:
-            subscriber['channel_id'] = item['id']
-        subscribers.append(subscriber)
+    for video_result in stats_response.get('items', []):
+        return video_result['statistics']
 
-    df_subscribers = pd.DataFrame(subscribers)
+    return None
 
-    df = pd.merge(left=df_video, right=df_subscribers, on='channel_id')
-    df_extracted = df[df['subscriber_count'] < threshold]
 
-    video_ids = df_extracted['video_id'].tolist()
-    videos_list = youtube.videos().list(
-                id=','.join(video_ids),
-                part='snippet,contentDetails,statistics',
-                fields='items(id,snippet(title,publishedAt),contentDetails(duration),statistics(viewCount))'
-            ).execute()
+def get_subscriber_count(channel_id):
+    channel_response = youtube.channels().list(
+        part='statistics',
+        id=channel_id
+    ).execute()
 
-    videos_info = []
+    for channel_result in channel_response.get('items', []):
+        return channel_result['statistics']['subscriberCount']
 
-    items = videos_list['items']
-    for item in items:
-        video_info = {}
-        video_info['video_id'] = item['id']
-        video_info['title'] = item['snippet']['title']
-        video_info['view_count'] = item['statistics']['viewCount']
-        videos_info.append(video_info)
 
-    df_videos_info = pd.DataFrame(videos_info)
+def analyze_title_words(videos):
+    all_titles = ' '.join([video['title'] for video in videos])
+    words = all_titles.split()
+    word_counts = Counter(words)
+    most_common_words = word_counts.most_common(10)
+    return most_common_words
 
-    try:
-        results = pd.merge(left=df_extracted, right=df_videos_info, on='video_id')
-        #     カラム並び替え
-        results = results.loc[:, ['video_id', 'title', 'view_count', 'subscriber_count', 'channel_id']]
-    except:
-        results = pd.DataFrame()
 
-    return results
+# 1.mecabを用いて単語に分けます。
+def mecab_analysis(text):
+    t = mc.Tagger("-Ochasen")
+    t.parse('')
+    node = t.parseToNode(text)
+    output = []
+    while node:
+        if node.surface != "":  # ヘッダとフッタを除外
+            word_type = node.feature.split(",")[0]
+            # if word_type in ["形容詞", "動詞","名詞", "副詞"]:
+            if word_type in ["名詞", "動詞", "形容詞"]:
+                output.append(node.surface)
+        node = node.next
+        if node is None:
+            break
+    return output
 
-st.title('分析アプリ')
 
-st.sidebar.write('## クエリと閾値の設定')
-st.sidebar.write('### クエリの入力')
-query = st.sidebar.text_input('検索クエリを入力してください','Python 自動化')
+def count_csv(videos):
+    all_titles = ' '.join([video['title'] for video in videos])
+    text = all_titles
+    words = mecab_analysis(text)
+    counter = Counter(words)
+    return counter.most_common()  # `most_common()`メソッドを呼び出して結果を返す
 
-st.sidebar.write('### 閾値の設定')
-threshold = st.sidebar.slider('登録者数の閾値',100, 10000, 5000)
 
-st.sidebar.write('### 表示数の設定')
-max_results = st.sidebar.slider('表示数',1, 100, 50)
+def main():
+    st.title('YouTube分析')
+    st.sidebar.write('## クエリと閾値の設定')
+    keyword = st.sidebar.text_input("キーボードから入力してください:")
+    st.sidebar.write('### 表示数の設定')
+    max_results = st.sidebar.slider('表示数', 1, 10, 50)
+    order = 'viewCount',  # 再生数でソート
+    regionCode = 'JP',  # 地域を日本に指定
+    type = 'video',  # 検索対象を動画に指定
 
-st.write('### 選択中のパラメーター')
-st.markdown(f"""
-- 検索クエリ：{query}
-- 登録者数の閾値：{threshold}       
-- 表示数：{max_results}     
-""")
+    if st.sidebar.button("検索"):
+        st.write("キーワードから検索:", keyword)
+        videos = search_videos_by_keyword(keyword, max_results)
+        st.markdown('## 視聴回数の多い順位表示します')
+        num_videos = len(videos)
+        num_columns = 4
+        num_rows = (num_videos - 1) // num_columns + 1
+        for i in range(num_rows):
+            cols = st.columns(num_columns)
+            for j in range(num_columns):
+                index = i * num_columns + j
+                if index < num_videos:
+                    video = videos[index]
+                    cols[j].image(video['thumbnail'], use_column_width=True, width=500)
+                    cols[j].text(video['title'])
+                    cols[j].text("視聴回数: " + f"{video['viewCount']:,}")
+                    cols[j].text("登録者数: " + f"{video['subscriberCount']:,}")
+                    if video['subscriberCount'] > 0:
+                        cols[j].text("視聴回数/登録者数: {:.2f}".format(video['viewCount'] / video['subscriberCount']))
 
-df_video = video_search(youtube, q=query, max_results=max_results)
-results = get_results(df_video, threshold=threshold)
+        most_common_words = count_csv(videos)
+        st.markdown('## タイトルによく使われる単語')
+        for word, count in most_common_words:
+            if len(word) > 1 and count > 1:
+                st.write(f"ワード「{word}」 使用回数 {count} 回")
 
-st.write('### 分析結果', results)
-st.write('### 動画再生')
 
-video_id = st.text_input('動画IDを入力してください')
-url = f"https://youtu.be/{video_id}"
-video_field = st.empty()
-video_field.write('こちらに動画が表示されます')
-
-if st.button('ビデオ表示'):
-    if len(video_id) > 0:
-        try:
-            video_field.video(url)
-        except:
-            st.error(
-                """
-                **おっと！何かエラーが起きているようです。** :(
-            """
-            )
+if __name__ == '__main__':
+    main()
