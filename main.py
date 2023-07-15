@@ -2,7 +2,7 @@ from apiclient.discovery import build
 import json
 from collections import Counter
 import streamlit as st
-import MeCab as mc
+from janome.tokenizer import Tokenizer
 from collections import Counter
 
 st.set_page_config(layout="wide")
@@ -76,22 +76,16 @@ def analyze_title_words(videos):
     return most_common_words
 
 
-# 1.mecabを用いて単語に分けます。
 def mecab_analysis(text):
-    t = mc.Tagger("-Ochasen")
-    t.parse('')
-    node = t.parseToNode(text)
+    t = Tokenizer()
     output = []
-    while node:
-        if node.surface != "":  # ヘッダとフッタを除外
-            word_type = node.feature.split(",")[0]
-            # if word_type in ["形容詞", "動詞","名詞", "副詞"]:
-            if word_type in ["名詞", "動詞", "形容詞"]:
-                output.append(node.surface)
-        node = node.next
-        if node is None:
-            break
+    tokens = t.tokenize(text)
+    for token in tokens:
+        part_of_speech = token.part_of_speech.split(',')[0]
+        if part_of_speech in ['名詞', '動詞', '形容詞']:
+            output.append(token.surface)
     return output
+
 
 
 def count_csv(videos):
@@ -107,7 +101,7 @@ def main():
     st.sidebar.write('## クエリと閾値の設定')
     keyword = st.sidebar.text_input("キーボードから入力してください:")
     st.sidebar.write('### 表示数の設定')
-    max_results = st.sidebar.slider('表示数', 1, 10, 50)
+    max_results = st.sidebar.slider('表示数', 1, 50, 10)
     order = 'viewCount',  # 再生数でソート
     regionCode = 'JP',  # 地域を日本に指定
     type = 'video',  # 検索対象を動画に指定
