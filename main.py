@@ -93,7 +93,6 @@ def count_csv(videos):
     counter = Counter(words)
     return counter.most_common()
 
-
 def main():
     st.title('YouTube分析')
     st.write('## クエリと閾値の設定')
