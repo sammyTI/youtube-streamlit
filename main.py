@@ -5,8 +5,7 @@ import streamlit as st
 from janome.tokenizer import Tokenizer
 from collections import Counter
 
-st.set_page_config(layout="wide")
-
+st.set_page_config(layout="centered")
 
 with open('secret.json') as f:
     secret = json.load(f)
@@ -22,12 +21,12 @@ def search_videos_by_keyword(keyword, max_results):
     search_response = youtube.search().list(
         q=keyword,
         type='video',
-        part='id,snippet',  # 'statistics'を削除
+        part='id,snippet',
         maxResults=max_results,
         order='viewCount',
-        videoDuration='medium',  # Short動画をフィルタするため4分以上の動画に絞る
-        publishedAfter='2023-01-01T00:00:00Z',  # 検索期間
-        publishedBefore='2023-07-01T23:59:59Z'  # 検索期間
+        videoDuration='medium',
+        publishedAfter='2023-01-01T00:00:00Z',
+        publishedBefore='2023-07-01T23:59:59Z'
     ).execute()
 
     video_info = []
@@ -87,31 +86,27 @@ def mecab_analysis(text):
     return output
 
 
-
 def count_csv(videos):
     all_titles = ' '.join([video['title'] for video in videos])
     text = all_titles
     words = mecab_analysis(text)
     counter = Counter(words)
-    return counter.most_common()  # `most_common()`メソッドを呼び出して結果を返す
+    return counter.most_common()
 
 
 def main():
     st.title('YouTube分析')
-    st.sidebar.write('## クエリと閾値の設定')
-    keyword = st.sidebar.text_input("キーボードから入力してください:")
-    st.sidebar.write('### 表示数の設定')
-    max_results = st.sidebar.slider('表示数', 1, 50, 10)
-    order = 'viewCount',  # 再生数でソート
-    regionCode = 'JP',  # 地域を日本に指定
-    type = 'video',  # 検索対象を動画に指定
+    st.write('## クエリと閾値の設定')
+    keyword = st.text_input("キーボードから入力してください:")
+    st.write('### 表示数の設定')
+    max_results = st.slider('表示数', 1, 50, 10)
 
-    if st.sidebar.button("検索"):
+    if st.button("検索"):
         st.write("キーワードから検索:", keyword)
         videos = search_videos_by_keyword(keyword, max_results)
         st.markdown('## 視聴回数の多い順位表示します')
         num_videos = len(videos)
-        num_columns = 4
+        num_columns = 2
         num_rows = (num_videos - 1) // num_columns + 1
         for i in range(num_rows):
             cols = st.columns(num_columns)
@@ -119,12 +114,12 @@ def main():
                 index = i * num_columns + j
                 if index < num_videos:
                     video = videos[index]
-                    cols[j].image(video['thumbnail'], use_column_width=True, width=500)
-                    cols[j].text(video['title'])
-                    cols[j].text("視聴回数: " + f"{video['viewCount']:,}")
-                    cols[j].text("登録者数: " + f"{video['subscriberCount']:,}")
+                    cols[j].image(video['thumbnail'], use_column_width=True)
+                    cols[j].write(video['title'])
+                    cols[j].write("視聴回数: " + f"{video['viewCount']:,}")
+                    cols[j].write("登録者数: " + f"{video['subscriberCount']:,}")
                     if video['subscriberCount'] > 0:
-                        cols[j].text("視聴回数/登録者数: {:.2f}".format(video['viewCount'] / video['subscriberCount']))
+                        cols[j].write("視聴回数/登録者数: {:.2f}".format(video['viewCount'] / video['subscriberCount']))
 
         most_common_words = count_csv(videos)
         st.markdown('## タイトルによく使われる単語')
