@@ -2,8 +2,22 @@ import streamlit as st
 from apiclient.discovery import build
 import json
 from datetime import datetime, timedelta
+from PIL import Image
 
-st.set_page_config(layout="centered")
+image = Image.open('youtube_favicon.png')
+st.set_page_config(
+    page_title="Slime Creator", 
+    page_icon=image, 
+    layout="wide", 
+    initial_sidebar_state="auto", 
+    menu_items={
+         'Get Help': 'https://www.google.com',
+         'Report a bug': "https://www.google.com",
+         'About': """
+         # 画像生成風アプリ
+         このアプリは画像生成風アプリで、実際にはキングスライムしか表示しません。
+         """
+     })
 
 # YouTube APIキーを読み込む
 with open('secret.json') as f:
@@ -102,6 +116,8 @@ def get_channel_info(channel_id):
 
     return None
 
+# ... (前半部分は変更なし) ...
+
 def main():
     st.title('YouTube動画評価ツール')
     channel_id = st.text_input("チャンネルIDを入力してください:")
@@ -132,19 +148,31 @@ def main():
             else:
                 st.markdown('## 評価順に動画を表示します')
                 st.write("フィルター条件で該当した動画数:", len(videos))
-                for video in videos:
-                    st.image(video['thumbnail'], use_column_width=True)
-                    st.write(video['title'])
-                    st.write("視聴回数：", f"{video['viewCount']:,}")
-                    published_at = datetime.strptime(video['publishedAt'], '%Y-%m-%dT%H:%M:%SZ')
-                    published_at_formatted = published_at.strftime('%Y/%m/%d %a %H:%M')
-                    day_of_week = {"Mon": "月", "Tue": "火", "Wed": "水", "Thu": "木", "Fri": "金", "Sat": "土", "Sun": "日"}
-                    published_at_day_of_week = day_of_week[published_at.strftime("%a")]
-                    st.write("投稿日時：", published_at_formatted.replace(published_at.strftime("%a"), published_at_day_of_week))
-                    st.write("動画評価指数：", f"{video['viewsPerSubscriber']:.2f}")
-                    video_url = f"https://www.youtube.com/watch?v={video['videoId']}"
-                    st.write(f"[動画を見る]({video_url})")
-                    st.write('---')
+
+                # 4列5行のグリッドレイアウトで動画を表示する
+                num_columns = 4
+                max_rows = 10  # 最大表示行数を5行とする
+
+                num_rows = min(max_rows, -(-len(videos) // num_columns))  # 動画の数に応じて行数を計算
+
+                for i in range(num_rows):
+                    col = st.columns(num_columns)
+                    for j in range(num_columns):
+                        index = i * num_columns + j
+                        if index < len(videos):
+                            video = videos[index]
+                            col[j].image(video['thumbnail'], use_column_width=True)
+                            col[j].write(video['title'])
+                            col[j].write(f"視聴回数： {video['viewCount']:,}")
+                            published_at = datetime.strptime(video['publishedAt'], '%Y-%m-%dT%H:%M:%SZ')
+                            published_at_formatted = published_at.strftime('%Y/%m/%d %a %H:%M')
+                            day_of_week = {"Mon": "月", "Tue": "火", "Wed": "水", "Thu": "木", "Fri": "金", "Sat": "土", "Sun": "日"}
+                            published_at_day_of_week = day_of_week[published_at.strftime("%a")]
+                            col[j].write(f"投稿日時： {published_at_formatted.replace(published_at.strftime('%a'), published_at_day_of_week)}")
+                            col[j].write(f"動画評価指数： {video['viewsPerSubscriber']:.2f}")
+                            video_url = f"https://www.youtube.com/watch?v={video['videoId']}"
+                            col[j].write(f"[動画を見る]({video_url})")
+                            col[j].write('---')
 
 if __name__ == '__main__':
     main()
