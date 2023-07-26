@@ -28,6 +28,7 @@ YOUTUBE_API_VERSION = "v3"
 
 youtube = build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION, developerKey=DEVELOPER_KEY)
 
+@st.cache_data(show_spinner=False)
 def search_videos_by_channel(channel_id, max_results, duration_filter, min_rating, max_rating):
     # 日付範囲の設定
     published_after, _ = get_date_range(duration_filter)
@@ -103,6 +104,7 @@ def get_date_range(duration_filter):
 
     return published_after, published_before
 
+@st.cache_data(show_spinner=False)
 def get_channel_info(channel_id):
     channel_response = youtube.channels().list(
         part='snippet,statistics',
@@ -119,16 +121,27 @@ def get_channel_info(channel_id):
 # ... (前半部分は変更なし) ...
 
 def main():
+    # 初期デフォルト値を指定
+    default_channel_id = ''
+    default_max_results = 10
+    default_duration_filter = '6ヶ月以内'
+    default_min_rating, default_max_rating = 2.0, 10.0
+
     st.title('YouTube動画評価ツール')
-    channel_id = st.text_input("チャンネルIDを入力してください:")
+    channel_id = st.text_input("チャンネルIDを入力してください:", default_channel_id)
 
     st.write('### 表示数の設定')
-    max_results = st.slider('表示数', 1, 50, 10)
+    max_results = st.slider('表示数', 1, 50, default_max_results)
 
-    duration_filter = st.selectbox('フィルター期間', ['6ヶ月以内', '3ヶ月以内', '1ヶ月以内'])
+    duration_filter = st.selectbox('フィルター期間', ['6ヶ月以内', '3ヶ月以内', '1ヶ月以内'], index=0 if default_duration_filter == '6ヶ月以内' else 1 if default_duration_filter == '3ヶ月以内' else 2)
 
-    min_rating, max_rating = st.slider('動画評価指数の範囲', 0.0, 10.0, (2.0, 10.0))
-
+    min_rating, max_rating = st.slider('動画評価指数の範囲', 0.0, 10.0, (default_min_rating, default_max_rating))
+    # クリアボタンの処理
+    if st.button("クリア"):
+        channel_id = default_channel_id
+        max_results = default_max_results
+        duration_filter = default_duration_filter
+        min_rating, max_rating = default_min_rating, default_max_rating
     if st.button("分析"):
         if channel_id:
             st.write("チャンネルID：", channel_id)
@@ -173,6 +186,8 @@ def main():
                             video_url = f"https://www.youtube.com/watch?v={video['videoId']}"
                             col[j].write(f"[動画を見る]({video_url})")
                             col[j].write('---')
+                    # st.balloons()
+
 
 if __name__ == '__main__':
     main()
