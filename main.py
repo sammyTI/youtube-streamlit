@@ -1,49 +1,58 @@
+import streamlit as st
 from apiclient.discovery import build
 import json
-from collections import Counter
-import streamlit as st
-from janome.tokenizer import Tokenizer
-from collections import Counter
+from datetime import datetime, timedelta
 
 st.set_page_config(layout="centered")
 
+# YouTube APIキーを読み込む
 with open('secret.json') as f:
     secret = json.load(f)
-
 DEVELOPER_KEY = secret['KEY']
 YOUTUBE_API_SERVICE_NAME = "youtube"
 YOUTUBE_API_VERSION = "v3"
 
 youtube = build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION, developerKey=DEVELOPER_KEY)
 
-
-def search_videos_by_keyword(keyword, max_results):
+def search_videos_by_channel(channel_id, max_results, duration_filter, min_rating, max_rating):
+    # 日付範囲の設定
+    published_after, _ = get_date_range(duration_filter)
     search_response = youtube.search().list(
-        q=keyword,
+        channelId=channel_id,
         type='video',
         part='id,snippet',
         maxResults=max_results,
         order='viewCount',
         videoDuration='medium',
-        publishedAfter='2023-01-01T00:00:00Z',
-        publishedBefore='2023-07-01T23:59:59Z'
+        publishedAfter=published_after,
+        regionCode='JP'
     ).execute()
 
     video_info = []
+    video_count = 0  # 動画の数をカウントする変数を初期化
+
     for search_result in search_response.get('items', []):
         if search_result['id']['kind'] == 'youtube#video':
             video_id = search_result['id']['videoId']
             video_stats = get_video_stats(video_id)
             if video_stats:
-                video_info.append({
-                    'title': search_result['snippet']['title'],
-                    'thumbnail': search_result['snippet']['thumbnails']['high']['url'],
-                    'viewCount': int(video_stats['viewCount']),
-                    'subscriberCount': int(get_subscriber_count(search_result['snippet']['channelId']))
-                })
+                subscriber_count = get_subscriber_count(channel_id)
+                if subscriber_count > 0:
+                    views_per_subscriber = int(video_stats['viewCount']) / subscriber_count
+                    rating = views_per_subscriber  # 動画評価指数をratingとして定義
+                    if min_rating <= rating <= max_rating:  # 動画評価指数が指定範囲内のみ追加
+                        video_info.append({
+                            'title': search_result['snippet']['title'],
+                            'viewCount': int(video_stats['viewCount']),
+                            'publishedAt': search_result['snippet']['publishedAt'],
+                            'viewsPerSubscriber': views_per_subscriber,
+                            'thumbnail': search_result['snippet']['thumbnails']['high']['url'],
+                            'videoId': video_id,
+                            'rating': rating  # 動画評価指数を追加
+                        })
+                        video_count += 1  # 動画が条件を満たす場合に動画数をカウント
 
-    return video_info
-
+    return video_info, video_count  # 動画の情報と動画数の両方を返すように修正
 
 def get_video_stats(video_id):
     stats_response = youtube.videos().list(
@@ -56,7 +65,6 @@ def get_video_stats(video_id):
 
     return None
 
-
 def get_subscriber_count(channel_id):
     channel_response = youtube.channels().list(
         part='statistics',
@@ -64,68 +72,79 @@ def get_subscriber_count(channel_id):
     ).execute()
 
     for channel_result in channel_response.get('items', []):
-        return channel_result['statistics']['subscriberCount']
+        return int(channel_result['statistics']['subscriberCount'])
 
+    return 0
 
-def analyze_title_words(videos):
-    all_titles = ' '.join([video['title'] for video in videos])
-    words = all_titles.split()
-    word_counts = Counter(words)
-    most_common_words = word_counts.most_common(10)
-    return most_common_words
+def get_date_range(duration_filter):
+    # 日付範囲の計算
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=30) if duration_filter == '1ヶ月以内' else \
+        end_date - timedelta(days=90) if duration_filter == '3ヶ月以内' else \
+        end_date - timedelta(days=180)
 
+    # YouTube APIの形式に変換
+    published_after = start_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+    published_before = end_date.strftime('%Y-%m-%dT%H:%M:%SZ')
 
-def mecab_analysis(text):
-    t = Tokenizer()
-    output = []
-    tokens = t.tokenize(text)
-    for token in tokens:
-        part_of_speech = token.part_of_speech.split(',')[0]
-        if part_of_speech in ['名詞', '動詞', '形容詞']:
-            output.append(token.surface)
-    return output
+    return published_after, published_before
 
+def get_channel_info(channel_id):
+    channel_response = youtube.channels().list(
+        part='snippet,statistics',
+        id=channel_id
+    ).execute()
 
-def count_csv(videos):
-    all_titles = ' '.join([video['title'] for video in videos])
-    text = all_titles
-    words = mecab_analysis(text)
-    counter = Counter(words)
-    return counter.most_common()
+    for channel_result in channel_response.get('items', []):
+        title = channel_result['snippet']['title']
+        subscriber_count = int(channel_result['statistics']['subscriberCount'])
+        return {'title': title, 'subscriberCount': subscriber_count, 'channelId': channel_id}
+
+    return None
 
 def main():
-    st.title('YouTube分析')
-    st.write('## クエリと閾値の設定')
-    keyword = st.text_input("キーボードから入力してください:")
+    st.title('YouTube動画評価ツール')
+    channel_id = st.text_input("チャンネルIDを入力してください:")
+
     st.write('### 表示数の設定')
     max_results = st.slider('表示数', 1, 50, 10)
 
-    if st.button("検索"):
-        st.write("キーワードから検索:", keyword)
-        videos = search_videos_by_keyword(keyword, max_results)
-        st.markdown('## 視聴回数の多い順位表示します')
-        num_videos = len(videos)
-        num_columns = 2
-        num_rows = (num_videos - 1) // num_columns + 1
-        for i in range(num_rows):
-            cols = st.columns(num_columns)
-            for j in range(num_columns):
-                index = i * num_columns + j
-                if index < num_videos:
-                    video = videos[index]
-                    cols[j].image(video['thumbnail'], use_column_width=True)
-                    cols[j].write(video['title'])
-                    cols[j].write("視聴回数: " + f"{video['viewCount']:,}")
-                    cols[j].write("登録者数: " + f"{video['subscriberCount']:,}")
-                    if video['subscriberCount'] > 0:
-                        cols[j].write("視聴回数/登録者数: {:.2f}".format(video['viewCount'] / video['subscriberCount']))
+    duration_filter = st.selectbox('フィルター期間', ['6ヶ月以内', '3ヶ月以内', '1ヶ月以内'])
 
-        most_common_words = count_csv(videos)
-        st.markdown('## タイトルによく使われる単語')
-        for word, count in most_common_words:
-            if len(word) > 1 and count > 1:
-                st.write(f"ワード「{word}」 使用回数 {count} 回")
+    min_rating, max_rating = st.slider('動画評価指数の範囲', 0.0, 10.0, (2.0, 10.0))
 
+    if st.button("分析"):
+        if channel_id:
+            st.write("チャンネルID：", channel_id)
+            channel_info = get_channel_info(channel_id)
+            if channel_info:
+                st.write("チャンネル名：", channel_info['title'])
+                st.write("登録者数：", f"{channel_info['subscriberCount']:,}")
+                st.markdown(f"[チャンネルページに移動](https://www.youtube.com/channel/{channel_info['channelId']})")
+
+            # 修正されたsearch_videos_by_channel関数を呼び出し
+            videos, video_count = search_videos_by_channel(channel_id, max_results, duration_filter, min_rating, max_rating)
+
+            st.write("期間内の動画投稿本数：", video_count)  # 動画数を表示
+
+            if not videos:
+                st.write("条件に合致する動画は見つかりませんでした。")
+            else:
+                st.markdown('## 評価順に動画を表示します')
+                st.write("フィルター条件で該当した動画数:", len(videos))
+                for video in videos:
+                    st.image(video['thumbnail'], use_column_width=True)
+                    st.write(video['title'])
+                    st.write("視聴回数：", f"{video['viewCount']:,}")
+                    published_at = datetime.strptime(video['publishedAt'], '%Y-%m-%dT%H:%M:%SZ')
+                    published_at_formatted = published_at.strftime('%Y/%m/%d %a %H:%M')
+                    day_of_week = {"Mon": "月", "Tue": "火", "Wed": "水", "Thu": "木", "Fri": "金", "Sat": "土", "Sun": "日"}
+                    published_at_day_of_week = day_of_week[published_at.strftime("%a")]
+                    st.write("投稿日時：", published_at_formatted.replace(published_at.strftime("%a"), published_at_day_of_week))
+                    st.write("動画評価指数：", f"{video['viewsPerSubscriber']:.2f}")
+                    video_url = f"https://www.youtube.com/watch?v={video['videoId']}"
+                    st.write(f"[動画を見る]({video_url})")
+                    st.write('---')
 
 if __name__ == '__main__':
     main()
