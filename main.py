@@ -118,8 +118,6 @@ def get_channel_info(channel_id):
 
     return None
 
-# ... (前半部分は変更なし) ...
-
 def main():
     # 初期デフォルト値を指定
     default_channel_id = ''
