@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from PIL import Image
 
-image = Image.open('asset/youtube_favicon.png')
+image = Image.open('./asset/youtube_favicon.png')
 st.set_page_config(
     page_title="Slime Creator", 
     page_icon=image, 
@@ -25,13 +25,13 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.header("テキストから分析")
-    # st.markdown("[![serch](asset/serch.png)]")
+    # st.markdown("[![serch](./asset/serch.png)]")
     # st.markdown("![serch](asset/serch.png)")
-    st.image("asset/serch.png")
+    st.image("./asset/serch.png")
     st.button("ツールを使用する。サイドバーから選択できます。")
         # /youtube_analyze_from_channel_v1
 
 with col2:
     st.header("チャンネルから分析")
-    st.image("asset/channel.png")
+    st.image("./asset/channel.png")
     st.button("分析ツールを使用する。サイドバーから選択できます。")
