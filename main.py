@@ -14,7 +14,7 @@ st.set_page_config(
         'Report a bug': "https://www.google.com",
         'About': """
         # YouTube分析アプリ
-        このアプリはYouTubeの分析に用いるアプリで、検索キーワードやチャンネルIDをもとに分析した結果を表示します。
+        このアプリはYouTubeの分析に用いるアプリで、検索キーワードやチャンネルIDをもとに分析した結果を表示しています。
         """
     }
 )
