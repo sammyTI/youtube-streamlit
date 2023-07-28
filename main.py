@@ -5,7 +5,7 @@ from PIL import Image
 # ここで set_page_config() を呼び出す
 image = Image.open('./asset/youtube_favicon.png')
 st.set_page_config(
-    page_title="Slime Creator", 
+    page_title="YouTube分析ツール", 
     page_icon=image, 
     layout="wide", 
     initial_sidebar_state="auto", 
@@ -13,8 +13,8 @@ st.set_page_config(
         'Get Help': 'https://www.google.com',
         'Report a bug': "https://www.google.com",
         'About': """
-        # 画像生成風アプリ
-        このアプリは画像生成風アプリで、実際にはキングスライムしか表示しません。
+        # YouTube分析アプリ
+        このアプリはYouTubeの分析に用いるアプリで、検索キーワードやチャンネルIDをもとに分析した結果を表示します。
         """
     }
 )

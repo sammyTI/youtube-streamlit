@@ -4,22 +4,6 @@ import json
 from datetime import datetime, timedelta
 from PIL import Image
 
-image = Image.open('asset/youtube_favicon.png')
-# st.set_page_config(
-#     page_title="Slime Creator", 
-#     page_icon=image, 
-#     layout="wide", 
-#     initial_sidebar_state="auto", 
-#     menu_items={
-#         'Get Help': 'https://www.google.com',
-#         'Report a bug': "https://www.google.com",
-#         'About': """
-#         # 画像生成風アプリ
-#         このアプリは画像生成風アプリで、実際にはキングスライムしか表示しません。
-#         """
-#     }
-# )
-
 # YouTube APIキーを読み込む
 with open('secret.json') as f:
     secret = json.load(f)
@@ -29,7 +13,6 @@ YOUTUBE_API_VERSION = "v3"
 
 youtube = build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION, developerKey=DEVELOPER_KEY)
 
-@st.cache_data(show_spinner=False)
 def search_videos_by_channel(channel_id, max_results, duration_filter, min_rating, max_rating):
     # 日付範囲の設定
     published_after, _ = get_date_range(duration_filter)
@@ -105,7 +88,6 @@ def get_date_range(duration_filter):
 
     return published_after, published_before
 
-@st.cache_data(show_spinner=False)
 def get_channel_info(channel_id):
     channel_response = youtube.channels().list(
         part='snippet,statistics',
@@ -124,7 +106,7 @@ def main():
     default_channel_id = ''
     default_max_results = 10
     default_duration_filter = '6ヶ月以内'
-    default_min_rating, default_max_rating = 2.0, 10.0
+    default_min_rating, default_max_rating = 1.0, 10.0
 
     st.title('YouTube動画評価ツール')
     channel_id = st.text_input("チャンネルIDを入力してください:", default_channel_id)
