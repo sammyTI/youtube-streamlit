@@ -1,5 +1,5 @@
 import streamlit as st
-from pages import youtube_analyze_from_search_v1, youtube_analyze_from_channel_v1
+from pages import youtube_analyze_from_search_v3, youtube_analyze_from_channel_v1
 from PIL import Image
 
 # ここで set_page_config() を呼び出す
@@ -21,7 +21,7 @@ st.set_page_config(
 
 # ページの辞書を定義
 PAGES = {
-    "キーワードから分析": youtube_analyze_from_search_v1,
+    "キーワードから分析": youtube_analyze_from_search_v3,
     "チャンネルから分析": youtube_analyze_from_channel_v1,
 }
 
